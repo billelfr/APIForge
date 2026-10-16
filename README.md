@@ -146,7 +146,7 @@ This is a **development-only deployment**, not a production release setup. Terra
 
    | Variable | Value |
    | --- | --- |
-   | `AWS_REGION` | `terraform output -raw aws_region` |
+   | `AWS_REGION` | Optional override; default is `eu-north-1` (the Terraform default). Set it to `terraform output -raw aws_region` if you changed the Terraform region. |
    | `AWS_DEPLOY_ROLE_ARN` | `terraform output -raw github_actions_deploy_role_arn` |
    | `EC2_INSTANCE_ID` | `terraform output -raw ec2_instance_id` |
    | `ECR_BACKEND_REPOSITORY` | `terraform output -raw ecr_backend_repository_url` |

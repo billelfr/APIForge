@@ -18,6 +18,8 @@ jobs:
     name: Verify, build, and deploy
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION || 'eu-north-1' }}
     permissions:
       contents: read
       id-token: write
@@ -60,7 +62,7 @@ jobs:
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
-          aws-region: ${{ vars.AWS_REGION }}
+          aws-region: ${{ env.AWS_REGION }}
 
       - name: Log in to Amazon ECR
         uses: aws-actions/amazon-ecr-login@v2
@@ -92,7 +94,6 @@ jobs:
 
       - name: Deploy on EC2 through Systems Manager
         env:
-          AWS_REGION: ${{ vars.AWS_REGION }}
           EC2_INSTANCE_ID: ${{ vars.EC2_INSTANCE_ID }}
           BACKEND_IMAGE: ${{ vars.ECR_BACKEND_REPOSITORY }}:${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
           FRONTEND_IMAGE: ${{ vars.ECR_FRONTEND_REPOSITORY }}:${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
