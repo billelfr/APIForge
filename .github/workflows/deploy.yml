@@ -58,6 +58,28 @@ jobs:
           POSTGRES_PASSWORD: validation-only
         run: docker compose -f docker-compose.deploy.yml config --quiet
 
+      - name: Validate GitHub deployment variables
+        env:
+          AWS_DEPLOY_ROLE_ARN: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          EC2_INSTANCE_ID: ${{ vars.EC2_INSTANCE_ID }}
+          ECR_BACKEND_REPOSITORY: ${{ vars.ECR_BACKEND_REPOSITORY }}
+          ECR_FRONTEND_REPOSITORY: ${{ vars.ECR_FRONTEND_REPOSITORY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          missing=()
+          for name in AWS_DEPLOY_ROLE_ARN EC2_INSTANCE_ID ECR_BACKEND_REPOSITORY ECR_FRONTEND_REPOSITORY; do
+            if [[ -z "${!name}" ]]; then
+              missing+=("$name")
+            fi
+          done
+
+          if (( ${#missing[@]} > 0 )); then
+            printf 'Missing GitHub Actions repository variable(s): %s\n' "${missing[*]}" >&2
+            echo "Set them under Settings > Secrets and variables > Actions > Variables. See the deployment setup in README.md." >&2
+            exit 1
+          fi
+
       - name: Configure AWS credentials with GitHub OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:

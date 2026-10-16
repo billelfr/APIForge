@@ -152,7 +152,7 @@ This is a **development-only deployment**, not a production release setup. Terra
    | `ECR_BACKEND_REPOSITORY` | `terraform output -raw ecr_backend_repository_url` |
    | `ECR_FRONTEND_REPOSITORY` | `terraform output -raw ecr_frontend_repository_url` |
 
-   These are configuration values, not credentials. No AWS access-key secrets are needed. The OIDC role trust is limited to pushes and manual runs from the configured repository's `main` branch.
+   These are configuration values, not credentials. In particular, `AWS_DEPLOY_ROLE_ARN` must be a repository **variable**, or the AWS credentials action will receive an empty role and cannot authenticate. No AWS access-key secrets are needed. The OIDC role trust is limited to pushes and manual runs from the configured repository's `main` branch.
 
 ### Deploy and access
 
