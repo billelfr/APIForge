@@ -1,0 +1,23 @@
+{
+  "name": "apiforge",
+  "private": true,
+  "workspaces": [
+    "apps/backend",
+    "apps/frontend"
+  ],
+  "scripts": {
+    "dev": "dotenv -e .env -- concurrently -k -n backend,frontend \"npm:dev --workspace=backend\" \"npm:dev --workspace=frontend\"",
+    "lint": "npm run lint --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspace=backend",
+    "build": "dotenv -e .env -- npm run build --workspaces --if-present",
+    "db:generate": "npm run db:generate --workspace=backend",
+    "db:migrate": "dotenv -e .env -- npm run db:migrate --workspace=backend",
+    "db:migrate:dev": "dotenv -e .env -- npm run db:migrate:dev --workspace=backend",
+    "db:seed": "dotenv -e .env -- npm run db:seed --workspace=backend"
+  },
+  "devDependencies": {
+    "concurrently": "9.1.2",
+    "dotenv-cli": "8.0.0"
+  }
+}

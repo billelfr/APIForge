@@ -1,0 +1,34 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Collection {
+  id        String         @id @default(cuid())
+  name      String
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+  requests  SavedRequest[]
+
+  @@index([createdAt])
+}
+
+model SavedRequest {
+  id           String     @id @default(cuid())
+  collectionId String
+  collection   Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  name         String
+  method       String
+  url          String
+  queryParams  Json
+  headers      Json
+  body         String?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  @@index([collectionId])
+}
