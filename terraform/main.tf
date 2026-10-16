@@ -80,11 +80,11 @@ resource "aws_security_group" "web" {
   }
 
   ingress {
-    description = "HTTP from the internet"
+    description = "HTTP from my IP only (local-development deployment)"
     from_port   = 80
     to_port     = 80
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    cidr_blocks = ["${var.my_ip}/32"]
   }
 
   egress {
@@ -99,4 +99,256 @@ resource "aws_security_group" "web" {
     Environment = "dev"
     Project     = "APIForge"
   }
+}
+
+data "aws_ami" "amazon_linux" {
+  most_recent = true
+  owners      = ["amazon"]
+
+  filter {
+    name   = "name"
+    values = ["al2023-ami-2023.*-x86_64"]
+  }
+
+  filter {
+    name   = "architecture"
+    values = ["x86_64"]
+  }
+
+  filter {
+    name   = "state"
+    values = ["available"]
+  }
+}
+
+data "aws_caller_identity" "current" {}
+
+resource "aws_ecr_repository" "backend" {
+  name                 = "apiforge-backend"
+  image_tag_mutability = "IMMUTABLE"
+
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+
+  tags = {
+    Project     = "APIForge"
+    Environment = "dev"
+  }
+}
+
+resource "aws_ecr_repository" "frontend" {
+  name                 = "apiforge-frontend"
+  image_tag_mutability = "IMMUTABLE"
+
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+
+  tags = {
+    Project     = "APIForge"
+    Environment = "dev"
+  }
+}
+
+resource "aws_iam_openid_connect_provider" "github" {
+  url            = "https://token.actions.githubusercontent.com"
+  client_id_list = ["sts.amazonaws.com"]
+}
+
+resource "aws_iam_role" "github_actions_deploy" {
+  name = "apiforge-github-actions-deploy"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Principal = {
+        Federated = aws_iam_openid_connect_provider.github.arn
+      }
+      Action = "sts:AssumeRoleWithWebIdentity"
+      Condition = {
+        StringEquals = {
+          "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
+          "token.actions.githubusercontent.com:sub" = "repo:${var.github_repository}:ref:refs/heads/main"
+        }
+      }
+    }]
+  })
+
+  tags = {
+    Project = "APIForge"
+  }
+}
+
+resource "aws_iam_role_policy" "github_actions_deploy" {
+  name = "apiforge-github-actions-deploy"
+  role = aws_iam_role.github_actions_deploy.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid      = "ECRAuthorization"
+        Effect   = "Allow"
+        Action   = ["ecr:GetAuthorizationToken"]
+        Resource = "*"
+      },
+      {
+        Sid    = "PushAPIForgeImages"
+        Effect = "Allow"
+        Action = [
+          "ecr:BatchCheckLayerAvailability",
+          "ecr:CompleteLayerUpload",
+          "ecr:InitiateLayerUpload",
+          "ecr:PutImage",
+          "ecr:UploadLayerPart"
+        ]
+        Resource = [
+          aws_ecr_repository.backend.arn,
+          aws_ecr_repository.frontend.arn
+        ]
+      },
+      {
+        Sid    = "DeployToAPIForgeInstance"
+        Effect = "Allow"
+        Action = ["ssm:SendCommand"]
+        Resource = [
+          "arn:aws:ssm:${var.aws_region}::document/AWS-RunShellScript",
+          "arn:aws:ec2:${var.aws_region}:${data.aws_caller_identity.current.account_id}:instance/${aws_instance.web.id}"
+        ]
+      },
+      {
+        Sid      = "ReadDeploymentCommand"
+        Effect   = "Allow"
+        Action   = ["ssm:GetCommandInvocation"]
+        Resource = "*"
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role" "ec2_ssm" {
+  name = "apiforge-ec2-ssm-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Principal = {
+        Service = "ec2.amazonaws.com"
+      }
+      Action = "sts:AssumeRole"
+    }]
+  })
+
+  tags = {
+    Project = "APIForge"
+  }
+}
+
+resource "aws_iam_role_policy_attachment" "ssm" {
+  role       = aws_iam_role.ec2_ssm.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+}
+
+resource "aws_iam_role_policy" "ec2_ecr_pull" {
+  name = "apiforge-ec2-ecr-pull"
+  role = aws_iam_role.ec2_ssm.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid      = "ECRAuthorization"
+        Effect   = "Allow"
+        Action   = ["ecr:GetAuthorizationToken"]
+        Resource = "*"
+      },
+      {
+        Sid    = "PullAPIForgeImages"
+        Effect = "Allow"
+        Action = [
+          "ecr:BatchCheckLayerAvailability",
+          "ecr:BatchGetImage",
+          "ecr:GetDownloadUrlForLayer"
+        ]
+        Resource = [
+          aws_ecr_repository.backend.arn,
+          aws_ecr_repository.frontend.arn
+        ]
+      }
+    ]
+  })
+}
+
+resource "aws_iam_instance_profile" "ec2" {
+  name = "apiforge-ec2-profile"
+  role = aws_iam_role.ec2_ssm.name
+}
+
+resource "aws_instance" "web" {
+  ami                         = data.aws_ami.amazon_linux.id
+  instance_type               = "t3.micro"
+  subnet_id                   = aws_subnet.public.id
+  vpc_security_group_ids      = [aws_security_group.web.id]
+  iam_instance_profile        = aws_iam_instance_profile.ec2.name
+  associate_public_ip_address = true
+
+  user_data = <<-EOF
+    #!/bin/bash
+    set -e
+    dnf install -y docker nginx curl awscli
+    systemctl enable --now docker nginx
+
+    install -d -m 0755 /usr/local/lib/docker/cli-plugins
+    curl -fsSL https://github.com/docker/compose/releases/download/v2.32.4/docker-compose-linux-x86_64 \
+      -o /usr/local/lib/docker/cli-plugins/docker-compose
+    chmod 0755 /usr/local/lib/docker/cli-plugins/docker-compose
+
+    cat > /etc/nginx/conf.d/default.conf <<'NGINX'
+    server {
+        listen 80 default_server;
+        server_name _;
+
+        location /api/ {
+            proxy_pass http://127.0.0.1:4000;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }
+
+        location ~ ^/(health/(live|ready)|metrics)$ {
+            proxy_pass http://127.0.0.1:4000;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }
+
+        location / {
+            proxy_pass http://127.0.0.1:3000;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }
+    }
+    NGINX
+
+    nginx -t
+    systemctl reload nginx
+  EOF
+
+  tags = {
+    Name        = "apiforge-web-server"
+    Environment = "dev"
+    Project     = "APIForge"
+  }
+
+  depends_on = [
+    aws_iam_role_policy_attachment.ssm,
+    aws_iam_role_policy.ec2_ecr_pull
+  ]
 }

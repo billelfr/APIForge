@@ -118,3 +118,46 @@ The metrics endpoint reports HTTP request counts by method and status class, dur
 | `LOG_LEVEL` | `info` | Structured log level |
 
 The sample credentials are for local development only. Do not reuse them for a publicly reachable deployment.
+
+## GitHub Actions deployment to the development EC2 instance
+
+The `Deploy APIForge` workflow runs on pushes to `main` or by manual dispatch. It runs lint, type checking, tests, and builds; builds and pushes commit-tagged backend and frontend images to ECR; then uses GitHub OIDC and Systems Manager (SSM) to deploy them. It does not use long-lived AWS access keys or SSH from GitHub-hosted runners.
+
+This is a **development-only deployment**, not a production release setup. Terraform restricts HTTP and SSH ingress to the `my_ip` address. Keep the application private: it has no user authentication, serves HTTP without TLS, and includes an outbound request proxy. Do not change the security group to allow public access without adding and testing suitable security controls.
+
+### One-time setup
+
+1. Copy `terraform/terraform.tfvars.example` to `terraform/terraform.tfvars`, set `my_ip` to your public IPv4 address without a `/32` suffix, and set the correct `github_repository` if deploying a fork.
+2. Apply the Terraform configuration (this provisions resources and can incur AWS charges):
+
+   ```sh
+   cd terraform
+   terraform init
+   terraform apply
+   ```
+
+   Terraform creates the EC2 instance profile, GitHub OIDC provider and deploy role, two ECR repositories, and installs Docker/Compose and Nginx on the instance. On first deployment, the workflow generates a random database password on the instance. If the AWS account already has the GitHub Actions OIDC provider, import it into this Terraform state before applying:
+
+   ```sh
+   terraform import aws_iam_openid_connect_provider.github arn:aws:iam::<account-id>:oidc-provider/token.actions.githubusercontent.com
+   ```
+
+3. In GitHub, open **Settings → Secrets and variables → Actions → Variables** and add these repository variables from Terraform outputs:
+
+   | Variable | Value |
+   | --- | --- |
+   | `AWS_REGION` | `terraform output -raw aws_region` |
+   | `AWS_DEPLOY_ROLE_ARN` | `terraform output -raw github_actions_deploy_role_arn` |
+   | `EC2_INSTANCE_ID` | `terraform output -raw ec2_instance_id` |
+   | `ECR_BACKEND_REPOSITORY` | `terraform output -raw ecr_backend_repository_url` |
+   | `ECR_FRONTEND_REPOSITORY` | `terraform output -raw ecr_frontend_repository_url` |
+
+   These are configuration values, not credentials. No AWS access-key secrets are needed. The OIDC role trust is limited to pushes and manual runs from the configured repository's `main` branch.
+
+### Deploy and access
+
+Push a commit to `main`, or manually run **Deploy APIForge** from the Actions tab while selecting `main`. The workflow deploys the exact commit's immutable images via SSM. Nginx on EC2 routes the UI to the frontend container and `/api`, `/health`, and `/metrics` to the backend; containers bind only to loopback. PostgreSQL data is kept in the Docker volume, and the instance's randomly generated database password is stored in `/opt/apiforge/.env` with restrictive file permissions.
+
+Use `terraform output -raw ec2_public_ip` to find the instance address, then open `http://<ec2-public-ip>`. Because ingress is restricted to `my_ip`, access is limited to the IPv4 address configured in Terraform. To change it, update `my_ip` and apply Terraform again.
+
+This deployment is intentionally separate from the local Compose setup. The workflow and deployment configuration have been added but have **not** been run as part of this change.
