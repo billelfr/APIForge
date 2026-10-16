@@ -140,6 +140,7 @@ jobs:
               commands: [
                 "set -eu",
                 "install -d -m 0750 /opt/apiforge",
+                "if ! command -v docker >/dev/null 2>&1; then dnf install -y docker; fi; systemctl enable --now docker; install -d -m 0755 /usr/local/lib/docker/cli-plugins; if ! docker compose version >/dev/null 2>&1; then curl -fsSL https://github.com/docker/compose/releases/download/v2.32.4/docker-compose-linux-x86_64 -o /usr/local/lib/docker/cli-plugins/docker-compose; chmod 0755 /usr/local/lib/docker/cli-plugins/docker-compose; fi; docker compose version",
                 ("printf %s " + ($compose | @sh) + " | base64 -d > /opt/apiforge/docker-compose.yml"),
                 "if [ ! -s /opt/apiforge/.env ]; then umask 077; { echo POSTGRES_DB=apiforge; echo POSTGRES_USER=apiforge; printf 'POSTGRES_PASSWORD='; openssl rand -hex 32; } > /opt/apiforge/.env.tmp && mv /opt/apiforge/.env.tmp /opt/apiforge/.env; fi",
                 "chmod 600 /opt/apiforge/.env",
