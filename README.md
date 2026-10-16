@@ -127,8 +127,8 @@ This is a **development-only deployment**, not a production release setup. Terra
 
 ### One-time setup
 
-1. Copy `terraform/terraform.tfvars.example` to `terraform/terraform.tfvars`, set `my_ip` to your public IPv4 address without a `/32` suffix, and set the correct `github_repository` if deploying a fork.
-2. Apply the Terraform configuration (this provisions resources and can incur AWS charges):
+1. Copy `terraform/terraform.tfvars.example` to `terraform/terraform.tfvars`, set `my_ip` to your public IPv4 address without a `/32` suffix, and set `github_repository`, `github_repository_owner_id`, and `github_repository_id` for your repository. Find the numeric IDs with `gh api repos/OWNER/REPO --jq '"owner_id=\(.owner.id) repository_id=\(.id)"'`.
+2. Apply the Terraform configuration (this provisions resources and can incur AWS charges; applying it again updates the existing IAM role trust policy):
 
    ```sh
    cd terraform
@@ -152,7 +152,7 @@ This is a **development-only deployment**, not a production release setup. Terra
    | `ECR_BACKEND_REPOSITORY` | `terraform output -raw ecr_backend_repository_url` |
    | `ECR_FRONTEND_REPOSITORY` | `terraform output -raw ecr_frontend_repository_url` |
 
-   These are configuration values, not credentials. In particular, `AWS_DEPLOY_ROLE_ARN` must be a repository **variable**, or the AWS credentials action will receive an empty role and cannot authenticate. No AWS access-key secrets are needed. The OIDC role trust is limited to pushes and manual runs from the configured repository's `main` branch.
+   These are configuration values, not credentials. In particular, `AWS_DEPLOY_ROLE_ARN` must be a repository **variable**, or the AWS credentials action will receive an empty role and cannot authenticate. No AWS access-key secrets are needed. The OIDC role trust uses GitHub's immutable owner/repository ID subject format and is limited to pushes and manual runs from the configured repository's `main` branch.
 
 ### Deploy and access
 
