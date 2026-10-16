@@ -141,7 +141,7 @@ jobs:
                 "set -eu",
                 "install -d -m 0750 /opt/apiforge",
                 ("printf %s " + ($compose | @sh) + " | base64 -d > /opt/apiforge/docker-compose.yml"),
-                "if [ ! -s /opt/apiforge/.env ]; then printf 'POSTGRES_DB=apiforge\\nPOSTGRES_USER=apiforge\\nPOSTGRES_PASSWORD=%s\\n' \"$(openssl rand -hex 32)\" > /opt/apiforge/.env; chmod 600 /opt/apiforge/.env; fi",
+                "if [ ! -s /opt/apiforge/.env ]; then umask 077; { echo POSTGRES_DB=apiforge; echo POSTGRES_USER=apiforge; printf 'POSTGRES_PASSWORD='; openssl rand -hex 32; } > /opt/apiforge/.env.tmp && mv /opt/apiforge/.env.tmp /opt/apiforge/.env; fi",
                 "chmod 600 /opt/apiforge/.env",
                 ("export AWS_REGION=" + ($region | @sh) + "; export BACKEND_IMAGE=" + ($backend | @sh) + "; export FRONTEND_IMAGE=" + ($frontend | @sh) + "; registry=\"${BACKEND_IMAGE%%/*}\"; aws ecr get-login-password --region \"$AWS_REGION\" | docker login --username AWS --password-stdin \"$registry\"; if docker compose --env-file /opt/apiforge/.env -f /opt/apiforge/docker-compose.yml pull; then docker logout \"$registry\"; else docker logout \"$registry\" || true; exit 1; fi"),
                 ("export BACKEND_IMAGE=" + ($backend | @sh) + "; export FRONTEND_IMAGE=" + ($frontend | @sh) + "; docker compose --env-file /opt/apiforge/.env -f /opt/apiforge/docker-compose.yml up -d --remove-orphans"),
