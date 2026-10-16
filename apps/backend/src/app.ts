@@ -1,6 +1,6 @@
 import cors from "cors";
 import express, { type NextFunction, type Request, type Response } from "express";
-import { PrismaClient, type Prisma } from "@prisma/client";
+import type { PrismaClient, Prisma } from "@prisma/client";
 import { config } from "./config";
 import { logger } from "./logger";
 import { OutboundError, sendOutbound } from "./outbound";
@@ -242,7 +242,8 @@ export function createApp(prisma: PrismaClient): express.Express {
   });
 
   app.use((_req, res) => res.status(404).json({ error: "Not found" }));
-  app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
+  app.use((error: unknown, _req: Request, res: Response, next: NextFunction) => {
+    if (res.headersSent) return next(error);
     if (error instanceof OutboundError) {
       return res.status(error.statusCode).json({ error: error.message });
     }
